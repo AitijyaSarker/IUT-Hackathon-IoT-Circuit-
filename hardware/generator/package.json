@@ -1,0 +1,17 @@
+{
+	"name": "wokwi-diagram-generator",
+	"version": "1.0.0",
+	"description": "Generate Wokwi diagram.json from a simple office config",
+	"main": "generate.ts",
+	"scripts": {
+		"start": "ts-node generate.ts"
+	},
+	"devDependencies": {
+		"@types/node": "^20.19.43",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.9.3"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC"
+}

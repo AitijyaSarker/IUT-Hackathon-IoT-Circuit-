@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "author": "auto-generator",
+  "parts": [
+    {
+      "type": "wokwi-text",
+      "id": "title",
+      "top": -50,
+      "left": 300,
+      "attrs": {
+        "text": "SMART OFFICE: 1 ROOM"
+      }
+    },
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp32",
+      "top": 150,
+      "left": 0,
+      "attrs": {
+        "env": "micro",
+        "nickname": "Gateway"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "gpio_contract",
+      "top": 400,
+      "left": 0,
+      "attrs": {
+        "text": "--- GPIO MAPPING CONTRACT ---\n\nOUTPUTS (Relays):\nGPIO 2  -> Light 1\nGPIO 4  -> Light 2\nGPIO 5  -> Light 3\nGPIO 12 -> Fan 1\nGPIO 13 -> Fan 2\n\nINPUTS (Switches):\nGPIO 15 -> Switch 1\nGPIO 27 -> Switch 2\nGPIO 26 -> Switch 3\nGPIO 25 -> Switch 4\nGPIO 33 -> Switch 5\n\nSENSORS:\nGPIO 14 -> PIR Motion Sensor"
+      }
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_light1",
+      "top": 0,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_light1",
+      "top": 10,
+      "left": 430,
+      "attrs": {
+        "text": "LIGHT 1\n(GPIO 2)"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "switch_light1",
+      "top": 20,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_light2",
+      "top": 120,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_light2",
+      "top": 130,
+      "left": 430,
+      "attrs": {
+        "text": "LIGHT 2\n(GPIO 4)"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "switch_light2",
+      "top": 140,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_light3",
+      "top": 240,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_light3",
+      "top": 250,
+      "left": 430,
+      "attrs": {
+        "text": "LIGHT 3\n(GPIO 5)"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "switch_light3",
+      "top": 260,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_fan1",
+      "top": 360,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_fan1",
+      "top": 370,
+      "left": 430,
+      "attrs": {
+        "text": "FAN 1\n(GPIO 12)"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "switch_fan1",
+      "top": 380,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-relay-module",
+      "id": "relay_fan2",
+      "top": 480,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_fan2",
+      "top": 490,
+      "left": 430,
+      "attrs": {
+        "text": "FAN 2\n(GPIO 13)"
+      }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "switch_fan2",
+      "top": 500,
+      "left": 500,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pir-motion-sensor",
+      "id": "pir1",
+      "top": -50,
+      "left": 0,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [
+      "esp32:D2",
+      "relay_light1:IN",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "relay_light1:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.1",
+      "relay_light1:GND",
+      "black"
+    ],
+    [
+      "esp32:D15",
+      "switch_light1:2",
+      "blue"
+    ],
+    [
+      "esp32:GND.2",
+      "switch_light1:1",
+      "black"
+    ],
+    [
+      "esp32:D4",
+      "relay_light2:IN",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "relay_light2:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.1",
+      "relay_light2:GND",
+      "black"
+    ],
+    [
+      "esp32:D27",
+      "switch_light2:2",
+      "blue"
+    ],
+    [
+      "esp32:GND.2",
+      "switch_light2:1",
+      "black"
+    ],
+    [
+      "esp32:D5",
+      "relay_light3:IN",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "relay_light3:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.1",
+      "relay_light3:GND",
+      "black"
+    ],
+    [
+      "esp32:D26",
+      "switch_light3:2",
+      "blue"
+    ],
+    [
+      "esp32:GND.2",
+      "switch_light3:1",
+      "black"
+    ],
+    [
+      "esp32:D12",
+      "relay_fan1:IN",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "relay_fan1:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.1",
+      "relay_fan1:GND",
+      "black"
+    ],
+    [
+      "esp32:D25",
+      "switch_fan1:2",
+      "blue"
+    ],
+    [
+      "esp32:GND.2",
+      "switch_fan1:1",
+      "black"
+    ],
+    [
+      "esp32:D13",
+      "relay_fan2:IN",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "relay_fan2:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.1",
+      "relay_fan2:GND",
+      "black"
+    ],
+    [
+      "esp32:D33",
+      "switch_fan2:2",
+      "blue"
+    ],
+    [
+      "esp32:GND.2",
+      "switch_fan2:1",
+      "black"
+    ],
+    [
+      "esp32:D14",
+      "pir1:OUT",
+      "green"
+    ],
+    [
+      "esp32:3V3",
+      "pir1:VCC",
+      "red"
+    ],
+    [
+      "esp32:GND.2",
+      "pir1:GND",
+      "black"
+    ]
+  ]
+}
