@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Smart Office – Control Dashboard</title>
+<meta name="description" content="Real-time Smart Office energy management dashboard. Control lights and fans via MQTT."/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --surface2: #1a2236;
+    --border: rgba(99,179,237,0.12);
+    --accent: #3b82f6;
+    --accent2: #8b5cf6;
+    --on-color: #22c55e;
+    --off-color: #ef4444;
+    --fan-color: #06b6d4;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --glow-blue: 0 0 20px rgba(59,130,246,0.4);
+    --glow-green: 0 0 20px rgba(34,197,94,0.5);
+    --glow-red: 0 0 18px rgba(239,68,68,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59,130,246,0.15) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(139,92,246,0.1) 0%, transparent 60%);
+  }
+
+  /* ─── Header ─── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.2rem 2rem;
+    background: rgba(17,24,39,0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: .75rem; }
+  .logo-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; box-shadow: var(--glow-blue);
+  }
+  .logo h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -.02em; }
+  .logo span { font-size: .7rem; color: var(--muted); font-weight: 400; display: block; }
+
+  /* MQTT status pill */
+  #mqtt-status {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .4rem 1rem; border-radius: 999px;
+    font-size: .78rem; font-weight: 600; letter-spacing: .04em;
+    transition: all .4s;
+  }
+  #mqtt-status.connecting { background: rgba(234,179,8,0.12); color: #fbbf24; border: 1px solid rgba(234,179,8,0.25); }
+  #mqtt-status.connected  { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+  #mqtt-status.error      { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+  /* ─── Main layout ─── */
+  main { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+  /* ─── Simulator switch banner ─── */
+  #sim-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; flex-wrap: wrap;
+    padding: 1.2rem 1.8rem;
+    border-radius: 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    margin-bottom: 2rem;
+    transition: border-color .4s, box-shadow .4s;
+  }
+  #sim-banner.master-on  { border-color: rgba(34,197,94,0.5); box-shadow: var(--glow-green); }
+  #sim-banner.master-off { border-color: rgba(239,68,68,0.3); }
+  .sim-info { display: flex; align-items: center; gap: 1rem; }
+  .sim-switch-icon { font-size: 2.2rem; }
+  .sim-label h2 { font-size: 1rem; font-weight: 700; }
+  .sim-label p  { font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+  #sim-state-badge {
+    padding: .35rem 1.1rem; border-radius: 999px;
+    font-size: .85rem; font-weight: 700; letter-spacing: .06em;
+    transition: all .3s;
+  }
+  #sim-state-badge.on  { background: rgba(34,197,94,0.18); color: #4ade80; border: 1px solid rgba(34,197,94,0.4); }
+  #sim-state-badge.off { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+
+  /* ─── Master control card ─── */
+  .master-card {
+    background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.12));
+    border: 1px solid rgba(99,179,237,0.25);
+    border-radius: 18px; padding: 1.5rem 2rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    flex-wrap: wrap; margin-bottom: 2rem;
+    box-shadow: var(--glow-blue);
+  }
+  .master-card h2 { font-size: 1.05rem; font-weight: 700; }
+  .master-card p  { font-size: .82rem; color: var(--muted); margin-top: .25rem; }
+  .master-btns { display: flex; gap: .75rem; }
+  .btn {
+    padding: .55rem 1.4rem; border-radius: 10px; border: none;
+    font-family: 'Inter', sans-serif; font-size: .88rem; font-weight: 600;
+    cursor: pointer; transition: all .2s; letter-spacing: .03em;
+  }
+  .btn-on  { background: linear-gradient(135deg,#16a34a,#22c55e); color: #fff; }
+  .btn-on:hover  { transform: translateY(-2px); box-shadow: var(--glow-green); }
+  .btn-off { background: linear-gradient(135deg,#b91c1c,#ef4444); color: #fff; }
+  .btn-off:hover { transform: translateY(-2px); box-shadow: var(--glow-red); }
+  .btn:active { transform: translateY(0); }
+
+  /* ─── Section header ─── */
+  .section-label {
+    font-size: .75rem; font-weight: 700; letter-spacing: .12em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 1rem;
+    display: flex; align-items: center; gap: .6rem;
+  }
+  .section-label::after { content:''; flex:1; height:1px; background: var(--border); }
+
+  /* ─── Device grid ─── */
+  .device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 1.1rem; margin-bottom: 2rem;
+  }
+  .device-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.25rem;
+    display: flex; flex-direction: column; gap: .9rem;
+    transition: border-color .35s, box-shadow .35s, transform .2s;
+    position: relative; overflow: hidden;
+  }
+  .device-card::before {
+    content: ''; position: absolute; inset: 0;
+    border-radius: 16px; opacity: 0;
+    transition: opacity .4s;
+    pointer-events: none;
+  }
+  .device-card.on  { border-color: rgba(34,197,94,0.45); }
+  .device-card.on::before  { background: radial-gradient(circle at 50% 0%, rgba(34,197,94,0.08) 0%, transparent 70%); opacity:1; }
+  .device-card.fan.on { border-color: rgba(6,182,212,0.45); }
+  .device-card.fan.on::before { background: radial-gradient(circle at 50% 0%, rgba(6,182,212,0.08) 0%, transparent 70%); opacity:1; }
+
+  .device-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; transition: all .3s;
+    background: var(--surface2);
+  }
+  .device-card.light.on .device-icon { background: rgba(253,224,71,0.15); box-shadow: 0 0 16px rgba(253,224,71,0.4); }
+  .device-card.fan.on .device-icon   { background: rgba(6,182,212,0.15); box-shadow: 0 0 16px rgba(6,182,212,0.4); animation: spin 1.5s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .device-name  { font-size: .9rem; font-weight: 600; }
+  .device-topic { font-size: .68rem; color: var(--muted); font-family: monospace; }
+  .device-status {
+    font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+    padding: .2rem .65rem; border-radius: 999px; display: inline-block;
+    transition: all .3s;
+  }
+  .status-on  { background: rgba(34,197,94,0.15); color: #4ade80; }
+  .status-fan-on { background: rgba(6,182,212,0.15); color: #22d3ee; }
+  .status-off { background: rgba(100,116,139,0.15); color: var(--muted); }
+
+  .toggle-btn {
+    width: 100%; padding: .5rem; border-radius: 8px; border: none;
+    font-family: 'Inter', sans-serif; font-size: .82rem; font-weight: 600;
+    cursor: pointer; transition: all .2s; letter-spacing: .03em;
+  }
+  .toggle-btn.turn-off { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+  .toggle-btn.turn-off:hover { background: rgba(239,68,68,0.25); }
+  .toggle-btn.turn-on  { background: rgba(34,197,94,0.10); color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+  .toggle-btn.turn-on:hover  { background: rgba(34,197,94,0.22); }
+
+  /* ─── Activity log ─── */
+  .log-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 1.25rem;
+  }
+  .log-box h3 { font-size: .85rem; font-weight: 700; margin-bottom: .85rem; display: flex; align-items: center; gap: .5rem; }
+  #log-list { list-style: none; display: flex; flex-direction: column; gap: .45rem; max-height: 210px; overflow-y: auto; }
+  #log-list li {
+    font-size: .78rem; color: var(--muted); padding: .4rem .7rem;
+    background: var(--surface2); border-radius: 8px;
+    display: flex; align-items: center; gap: .6rem;
+    animation: slideIn .25s ease;
+  }
+  @keyframes slideIn { from { opacity:0; transform: translateY(-6px); } to { opacity:1; transform: none; } }
+  .log-time { font-family: monospace; color: #475569; font-size: .72rem; flex-shrink: 0; }
+  .log-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .log-dot.on  { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+  .log-dot.off { background: #f87171; box-shadow: 0 0 6px #f87171; }
+  .log-dot.info { background: #60a5fa; }
+  .log-dot.motion { background: #f59e0b; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🏢</div>
+    <div>
+      <h1>Smart Office</h1>
+      <span>Energy Management Dashboard</span>
+    </div>
+  </div>
+  <div id="mqtt-status" class="connecting">
+    <span class="dot"></span>
+    <span id="mqtt-status-text">Connecting…</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Simulator Switch Banner -->
+  <div id="sim-banner" class="master-off">
+    <div class="sim-info">
+      <div class="sim-switch-icon">🔌</div>
+      <div class="sim-label">
+        <h2>Simulator Master Switch</h2>
+        <p>Physical switch state from Wokwi (GPIO 15) — updates in real-time</p>
+      </div>
+    </div>
+    <span id="sim-state-badge" class="off">● OFF</span>
+  </div>
+
+  <!-- Master Web-App Control -->
+  <div class="master-card">
+    <div>
+      <h2>🎛️ Master Control (Web App)</h2>
+      <p>Turn all lights &amp; fans ON or OFF at once from this dashboard</p>
+    </div>
+    <div class="master-btns">
+      <button id="btn-all-on"  class="btn btn-on"  onclick="masterControl(true)">⚡ All ON</button>
+      <button id="btn-all-off" class="btn btn-off" onclick="masterControl(false)">🔴 All OFF</button>
+    </div>
+  </div>
+
+  <!-- Lights -->
+  <div class="section-label">💡 Lights</div>
+  <div class="device-grid" id="lights-grid"></div>
+
+  <!-- Fans -->
+  <div class="section-label">🌀 Fans</div>
+  <div class="device-grid" id="fans-grid"></div>
+
+  <!-- Activity Log -->
+  <div class="log-box">
+    <h3>📋 Activity Log <span style="font-weight:400;color:var(--muted);font-size:.75rem;">– live MQTT events</span></h3>
+    <ul id="log-list"></ul>
+  </div>
+
+</main>
+
+<script>
+const BROKER    = "wss://broker.hivemq.com:8884/mqtt";
+const TOPIC_PFX = "smartoffice/drawing/";
+
+const DEVICES = [
+  { id: "light1", label: "Light 1", icon: "💡", type: "light", gpio: 2  },
+  { id: "light2", label: "Light 2", icon: "💡", type: "light", gpio: 4  },
+  { id: "light3", label: "Light 3", icon: "💡", type: "light", gpio: 5  },
+  { id: "fan1",   label: "Fan 1",   icon: "🌀", type: "fan",   gpio: 12 },
+  { id: "fan2",   label: "Fan 2",   icon: "🌀", type: "fan",   gpio: 13 }
+];
+
+const states = {};
+DEVICES.forEach(d => states[d.id] = false);
+let masterSimState = false;
+
+// ── Build device cards ──────────────────────────────────────
+function buildCards() {
+  const lights = document.getElementById("lights-grid");
+  const fans   = document.getElementById("fans-grid");
+  DEVICES.forEach(d => {
+    const card = document.createElement("div");
+    card.className = `device-card ${d.type}`;
+    card.id = `card-${d.id}`;
+    card.innerHTML = `
+      <div class="device-icon" id="icon-${d.id}">${d.icon}</div>
+      <div>
+        <div class="device-name">${d.label}</div>
+        <div class="device-topic">GPIO ${d.gpio} · ${TOPIC_PFX}${d.id}</div>
+      </div>
+      <span class="device-status status-off" id="status-${d.id}">OFF</span>
+      <button class="toggle-btn turn-on" id="btn-${d.id}" onclick="toggleDevice('${d.id}')">Turn ON</button>
+    `;
+    (d.type === "light" ? lights : fans).appendChild(card);
+  });
+}
+
+// ── Update one card's UI ────────────────────────────────────
+function updateCard(id, on) {
+  states[id] = on;
+  const dev   = DEVICES.find(d => d.id === id);
+  const card  = document.getElementById(`card-${id}`);
+  const st    = document.getElementById(`status-${id}`);
+  const btn   = document.getElementById(`btn-${id}`);
+
+  card.className = `device-card ${dev.type}${on ? " on" : ""}`;
+
+  if (on) {
+    st.textContent  = "ON";
+    st.className    = dev.type === "fan" ? "device-status status-fan-on" : "device-status status-on";
+    btn.textContent = "Turn OFF";
+    btn.className   = "toggle-btn turn-off";
+  } else {
+    st.textContent  = "OFF";
+    st.className    = "device-status status-off";
+    btn.textContent = "Turn ON";
+    btn.className   = "toggle-btn turn-on";
+  }
+}
+
+// ── Simulator banner ────────────────────────────────────────
+function updateSimBanner(on) {
+  masterSimState = on;
+  const banner = document.getElementById("sim-banner");
+  const badge  = document.getElementById("sim-state-badge");
+  banner.className = on ? "master-on" : "master-off";
+  badge.textContent = on ? "● ON" : "● OFF";
+  badge.className   = on ? "on" : "off";
+}
+
+// ── Log helper ──────────────────────────────────────────────
+function log(msg, type = "info") {
+  const ul   = document.getElementById("log-list");
+  const now  = new Date().toLocaleTimeString();
+  const li   = document.createElement("li");
+  li.innerHTML = `
+    <span class="log-time">${now}</span>
+    <span class="log-dot ${type}"></span>
+    <span>${msg}</span>
+  `;
+  ul.prepend(li);
+  if (ul.children.length > 60) ul.lastChild.remove();
+}
+
+// ── MQTT ────────────────────────────────────────────────────
+let mqttClient;
+function connectMQTT() {
+  const statusEl   = document.getElementById("mqtt-status");
+  const statusText = document.getElementById("mqtt-status-text");
+
+  statusEl.className   = "connecting";
+  statusText.textContent = "Connecting…";
+
+  mqttClient = mqtt.connect(BROKER, {
+    clientId: "webapp-smartoffice-" + Math.random().toString(16).slice(2, 8),
+    clean: true, connectTimeout: 10000,
+    reconnectPeriod: 4000
+  });
+
+  mqttClient.on("connect", () => {
+    statusEl.className   = "connected";
+    statusText.textContent = "Connected";
+    log("Connected to MQTT broker", "info");
+
+    // Subscribe to all state topics
+    DEVICES.forEach(d => mqttClient.subscribe(`${TOPIC_PFX}${d.id}/state`));
+    mqttClient.subscribe(`${TOPIC_PFX}master/state`);
+    mqttClient.subscribe(`${TOPIC_PFX}motion/state`);
+  });
+
+  mqttClient.on("error", err => {
+    statusEl.className   = "error";
+    statusText.textContent = "Error";
+    log("MQTT error: " + err.message, "off");
+  });
+
+  mqttClient.on("reconnect", () => {
+    statusEl.className   = "connecting";
+    statusText.textContent = "Reconnecting…";
+  });
+
+  mqttClient.on("message", (topic, payload) => {
+    const msg = payload.toString();
+    const on  = (msg === "ON" || msg === "true" || msg === "1");
+
+    // Master switch from simulator
+    if (topic === `${TOPIC_PFX}master/state`) {
+      updateSimBanner(on);
+      DEVICES.forEach(d => updateCard(d.id, on));
+      log(`🔌 Simulator master switch → ${on ? "ON" : "OFF"}`, on ? "on" : "off");
+      return;
+    }
+
+    // Motion sensor
+    if (topic === `${TOPIC_PFX}motion/state`) {
+      log(`🚶 Motion sensor → ${on ? "Detected" : "Ended"}`, "motion");
+      return;
+    }
+
+    // Individual device
+    const dev = DEVICES.find(d => topic === `${TOPIC_PFX}${d.id}/state`);
+    if (dev) {
+      updateCard(dev.id, on);
+      log(`${dev.icon} ${dev.label} → ${on ? "ON" : "OFF"}`, on ? "on" : "off");
+    }
+  });
+}
+
+// ── Publish helpers ─────────────────────────────────────────
+function publish(topic, msg) {
+  if (mqttClient && mqttClient.connected) {
+    mqttClient.publish(topic, msg, { retain: true });
+  } else {
+    log("Not connected – command not sent", "off");
+  }
+}
+
+function toggleDevice(id) {
+  const newState = !states[id];
+  publish(`${TOPIC_PFX}${id}/set`, newState ? "ON" : "OFF");
+  // Optimistic update
+  updateCard(id, newState);
+  const dev = DEVICES.find(d => d.id === id);
+  log(`${dev.icon} ${dev.label} → ${newState ? "ON" : "OFF"} (web command)`, newState ? "on" : "off");
+}
+
+function masterControl(on) {
+  publish(`${TOPIC_PFX}master/set`, on ? "ON" : "OFF");
+  DEVICES.forEach(d => updateCard(d.id, on));
+  updateSimBanner(on);
+  log(`🎛️ Master web control → ${on ? "ALL ON" : "ALL OFF"}`, on ? "on" : "off");
+}
+
+// ── Init ────────────────────────────────────────────────────
+buildCards();
+connectMQTT();
+</script>
+</body>
+</html>

@@ -8,12 +8,12 @@ const char* password = "";
 // MQTT Broker settings
 const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
-const char* client_id = "esp32-smartoffice-client";
+const char* client_id = "esp32-smartoffice-ctrl";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// Device configuration
+// Device config: relay pin + individual switch pin
 struct Device {
   const char* id;
   int relayPin;
@@ -23,14 +23,19 @@ struct Device {
 };
 
 Device devices[] = {
-  {"light1", 2, 15, HIGH, false},
-  {"light2", 4, 27, HIGH, false},
-  {"light3", 5, 26, HIGH, false},
-  {"fan1", 12, 25, HIGH, false},
-  {"fan2", 13, 33, HIGH, false}
+  {"light1", 2,  27, HIGH, false},
+  {"light2", 4,  26, HIGH, false},
+  {"light3", 5,  25, HIGH, false},
+  {"fan1",   12, 33, HIGH, false},
+  {"fan2",   13, 32, HIGH, false}
 };
 const int numDevices = sizeof(devices) / sizeof(devices[0]);
 
+// Master switch (turns ALL devices on/off)
+const int masterSwitchPin = 15;
+int lastMasterSwitchState = HIGH;
+
+// PIR sensor
 const int pirPin = 14;
 int lastPirState = LOW;
 
@@ -41,46 +46,58 @@ void setup_wifi() {
   Serial.println();
   Serial.print("Connecting to ");
   Serial.println(ssid);
-
   WiFi.begin(ssid, password);
-
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
+  Serial.println("\nWiFi connected");
   Serial.println(WiFi.localIP());
 }
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  
-  String msg;
-  for (unsigned int i = 0; i < length; i++) {
-    msg += (char)payload[i];
-  }
-  Serial.println(msg);
+// Publish a single device's state
+void publishDeviceState(int i) {
+  String stateTopic = String(topicPrefix) + devices[i].id + "/state";
+  client.publish(stateTopic.c_str(), devices[i].relayState ? "ON" : "OFF", true);
+}
 
-  // Check if topic is a command for one of our devices
+// Set ALL devices and publish master + individual states
+void setAllDevices(bool state) {
   for (int i = 0; i < numDevices; i++) {
-    String commandTopic = String(topicPrefix) + devices[i].id + "/set";
-    if (String(topic) == commandTopic) {
-      if (msg == "ON" || msg == "1" || msg == "true") {
-        devices[i].relayState = true;
-        digitalWrite(devices[i].relayPin, HIGH);
-      } else if (msg == "OFF" || msg == "0" || msg == "false") {
-        devices[i].relayState = false;
-        digitalWrite(devices[i].relayPin, LOW);
-      }
-      
-      // Publish new state
-      String stateTopic = String(topicPrefix) + devices[i].id + "/state";
-      client.publish(stateTopic.c_str(), devices[i].relayState ? "ON" : "OFF");
+    devices[i].relayState = state;
+    digitalWrite(devices[i].relayPin, state ? HIGH : LOW);
+    publishDeviceState(i);
+  }
+  String masterTopic = String(topicPrefix) + "master/state";
+  client.publish(masterTopic.c_str(), state ? "ON" : "OFF", true);
+  Serial.print("MASTER -> All: ");
+  Serial.println(state ? "ON" : "OFF");
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  String msg;
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+  Serial.print("MQTT ["); Serial.print(topic); Serial.print("] "); Serial.println(msg);
+
+  bool isOn  = (msg == "ON"  || msg == "1" || msg == "true");
+  bool isOff = (msg == "OFF" || msg == "0" || msg == "false");
+  if (!isOn && !isOff) return;
+
+  // Master command from web app
+  if (String(topic) == String(topicPrefix) + "master/set") {
+    setAllDevices(isOn);
+    return;
+  }
+
+  // Individual device command from web app
+  for (int i = 0; i < numDevices; i++) {
+    if (String(topic) == String(topicPrefix) + devices[i].id + "/set") {
+      devices[i].relayState = isOn;
+      digitalWrite(devices[i].relayPin, isOn ? HIGH : LOW);
+      publishDeviceState(i);
+      Serial.print("Device "); Serial.print(devices[i].id);
+      Serial.print(" -> "); Serial.println(isOn ? "ON" : "OFF");
+      break;
     }
   }
 }
@@ -88,20 +105,20 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
     if (client.connect(client_id)) {
       Serial.println("connected");
-      // Subscribe to command topics
+      // Subscribe to master/set
+      String mt = String(topicPrefix) + "master/set";
+      client.subscribe(mt.c_str());
+      // Subscribe to each device's /set topic
       for (int i = 0; i < numDevices; i++) {
-        String commandTopic = String(topicPrefix) + devices[i].id + "/set";
-        client.subscribe(commandTopic.c_str());
-        Serial.print("Subscribed to ");
-        Serial.println(commandTopic);
+        String ct = String(topicPrefix) + devices[i].id + "/set";
+        client.subscribe(ct.c_str());
+        Serial.print("Subscribed: "); Serial.println(ct);
       }
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
+      Serial.print("failed, rc="); Serial.print(client.state());
+      Serial.println(" retry in 5s");
       delay(5000);
     }
   }
@@ -110,16 +127,20 @@ void reconnect() {
 void setup() {
   Serial.begin(115200);
 
-  // Initialize pins
+  // Relay pins - all OFF at start
   for (int i = 0; i < numDevices; i++) {
     pinMode(devices[i].relayPin, OUTPUT);
-    digitalWrite(devices[i].relayPin, LOW); // Initial state OFF
-    
-    // Wokwi slide switches connect to GND, so use INPUT_PULLUP
+    digitalWrite(devices[i].relayPin, LOW);
+    // Individual switch - INPUT_PULLUP (slide switch connects to GND)
     pinMode(devices[i].switchPin, INPUT_PULLUP);
     devices[i].lastSwitchState = digitalRead(devices[i].switchPin);
   }
-  
+
+  // Master switch
+  pinMode(masterSwitchPin, INPUT_PULLUP);
+  lastMasterSwitchState = digitalRead(masterSwitchPin);
+
+  // PIR
   pinMode(pirPin, INPUT);
 
   setup_wifi();
@@ -128,50 +149,45 @@ void setup() {
 }
 
 void loop() {
-  if (!client.connected()) {
-    reconnect();
-  }
+  if (!client.connected()) reconnect();
   client.loop();
 
-  // Check for physical switch toggles
+  // ── Master switch ──────────────────────────────────────────
+  int curMaster = digitalRead(masterSwitchPin);
+  if (curMaster != lastMasterSwitchState) {
+    delay(50);
+    curMaster = digitalRead(masterSwitchPin);
+    if (curMaster != lastMasterSwitchState) {
+      lastMasterSwitchState = curMaster;
+      bool on = (curMaster == LOW); // LOW = switch slid to ON (connected GND)
+      setAllDevices(on);
+    }
+  }
+
+  // ── Individual switches ────────────────────────────────────
   for (int i = 0; i < numDevices; i++) {
-    int currentSwitchState = digitalRead(devices[i].switchPin);
-    
-    // If switch state changed
-    if (currentSwitchState != devices[i].lastSwitchState) {
-      delay(50); // Simple debounce
-      currentSwitchState = digitalRead(devices[i].switchPin);
-      
-      if (currentSwitchState != devices[i].lastSwitchState) {
-        devices[i].lastSwitchState = currentSwitchState;
-        
-        // Toggle the relay state
-        devices[i].relayState = !devices[i].relayState;
-        digitalWrite(devices[i].relayPin, devices[i].relayState ? HIGH : LOW);
-        
-        // Publish new state via MQTT
-        String stateTopic = String(topicPrefix) + devices[i].id + "/state";
-        client.publish(stateTopic.c_str(), devices[i].relayState ? "ON" : "OFF");
-        
-        Serial.print("Switch toggled manually: ");
-        Serial.print(devices[i].id);
-        Serial.print(" -> ");
-        Serial.println(devices[i].relayState ? "ON" : "OFF");
+    int cur = digitalRead(devices[i].switchPin);
+    if (cur != devices[i].lastSwitchState) {
+      delay(50);
+      cur = digitalRead(devices[i].switchPin);
+      if (cur != devices[i].lastSwitchState) {
+        devices[i].lastSwitchState = cur;
+        bool on = (cur == LOW); // LOW = switch slid ON
+        devices[i].relayState = on;
+        digitalWrite(devices[i].relayPin, on ? HIGH : LOW);
+        publishDeviceState(i);
+        Serial.print("Individual switch ["); Serial.print(devices[i].id);
+        Serial.print("] -> "); Serial.println(on ? "ON" : "OFF");
       }
     }
   }
 
-  // Check PIR sensor
-  int currentPirState = digitalRead(pirPin);
-  if (currentPirState != lastPirState) {
-    lastPirState = currentPirState;
+  // ── PIR sensor ─────────────────────────────────────────────
+  int curPir = digitalRead(pirPin);
+  if (curPir != lastPirState) {
+    lastPirState = curPir;
     String motionTopic = String(topicPrefix) + "motion/state";
-    if (currentPirState == HIGH) {
-      client.publish(motionTopic.c_str(), "true");
-      Serial.println("Motion detected!");
-    } else {
-      client.publish(motionTopic.c_str(), "false");
-      Serial.println("Motion ended.");
-    }
+    client.publish(motionTopic.c_str(), curPir == HIGH ? "true" : "false");
+    Serial.println(curPir == HIGH ? "Motion detected!" : "Motion ended.");
   }
 }
